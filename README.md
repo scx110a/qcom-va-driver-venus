@@ -27,17 +27,17 @@ VA-API 硬件编解码。
 
 ## 安装
 
+使用 CI 构建的 Debian 包：
+
 ```bash
-sudo dpkg -i qcom-va-driver_1.1.1-venus3_arm64.deb
+sudo dpkg -i qcom-va-driver_1.1.1-venus4_arm64.deb
 ```
 
-提供三个构建变体：
+或从源码构建后直接安装（见下节）：
 
-| 包 | 内容 |
-| --- | --- |
-| venus3 | 解码 + 编码 + GPU 零拷贝（推荐） |
-| venus2 | 解码 + 编码 |
-| venus1 | 仅解码 |
+```bash
+sudo ninja -C build install
+```
 
 驱动安装到 `/usr/lib/aarch64-linux-gnu/dri/`，由 libva 自动加载，
 无需设置 `LIBVA_DRIVER_NAME`。
@@ -59,7 +59,7 @@ sudo ninja -C build install
 ```
 
 缺少 `libegl-dev` / `libgles-dev` / `libgbm-dev` 时，`gpu_copy` 会被自动禁用，
-零拷贝不可用（对应 venus2 的构建配置）。
+零拷贝不可用。
 
 ## 验证
 

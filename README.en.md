@@ -27,17 +27,17 @@ pool size, control compatibility, and others), plus added VP8 decoding support.
 
 ## Installation
 
+Using the Debian package built by CI:
+
 ```bash
-sudo dpkg -i qcom-va-driver_1.1.1-venus3_arm64.deb
+sudo dpkg -i qcom-va-driver_1.1.1-venus4_arm64.deb
 ```
 
-Three builds are provided:
+Or install straight from a source build (see the next section):
 
-| Package | Contents |
-| --- | --- |
-| venus3 | Decode + encode + GPU zero-copy (recommended) |
-| venus2 | Decode + encode |
-| venus1 | Decode only |
+```bash
+sudo ninja -C build install
+```
 
 The driver installs into `/usr/lib/aarch64-linux-gnu/dri/` and is picked up by
 libva automatically; `LIBVA_DRIVER_NAME` does not need to be set.
@@ -59,8 +59,7 @@ sudo ninja -C build install
 ```
 
 If `libegl-dev` / `libgles-dev` / `libgbm-dev` are missing, `gpu_copy` is
-disabled automatically and zero-copy is unavailable (this matches the venus2
-build).
+disabled automatically and zero-copy is unavailable.
 
 ## Verification
 
