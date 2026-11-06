@@ -152,6 +152,9 @@ inline bool is_hevc(VAProfile p) {
 inline bool is_vp9(VAProfile p) {
     return p == VAProfileVP9Profile0 || p == VAProfileVP9Profile2;
 }
+inline bool is_vp8(VAProfile p) {
+    return p == VAProfileVP8Version0_3;
+}
 inline bool is_av1(VAProfile p) {
     return p == VAProfileAV1Profile0;
 }
@@ -167,6 +170,17 @@ struct Vp9Picture {
     bool has_params = false;
     std::vector<VASliceParameterBufferVP9> pending_slices;
     std::vector<Vp9Slice> slices;
+};
+struct Vp8Slice {
+    VASliceParameterBufferVP8 params{};
+    std::vector<uint8_t> bytes;
+};
+struct Vp8Picture {
+    VAPictureParameterBufferVP8 params{};
+    VAIQMatrixBufferVP8 iq{};
+    bool has_params = false, has_iq = false;
+    std::vector<VASliceParameterBufferVP8> pending_slices;
+    std::vector<Vp8Slice> slices;
 };
 struct Av1Slice {
     VASliceParameterBufferAV1 params{};
@@ -190,6 +204,7 @@ struct Av1State {
 std::vector<uint8_t> av1_bitstream(const Av1Picture &picture, Av1State &state, unsigned width,
                                   unsigned height);
 std::vector<uint8_t> vp9_bitstream(VAProfile profile, const Vp9Picture &picture);
+std::vector<uint8_t> vp8_bitstream(const Vp8Picture &picture);
 std::vector<uint8_t> h264_bitstream(VAProfile profile, const Picture &picture, H264State &state);
 std::vector<uint8_t> hevc_bitstream(VAProfile profile, const HevcPicture &picture,
                                     HevcState &state);
@@ -328,6 +343,7 @@ struct Context {
     HevcPicture hevc_picture;
     HevcState hevc;
     Vp9Picture vp9_picture;
+    Vp8Picture vp8_picture;
     Av1Picture av1_picture;
     Av1State av1;
 };

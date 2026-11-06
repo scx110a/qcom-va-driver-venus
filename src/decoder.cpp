@@ -119,6 +119,7 @@ Decoder::Decoder(const std::string &device, unsigned width, unsigned height, uns
         fmt.fmt.pix_mp.height = height;
         fmt.fmt.pix_mp.pixelformat = is_av1(profile)    ? V4L2_PIX_FMT_AV1
                                      : is_vp9(profile)  ? V4L2_PIX_FMT_VP9
+                                     : is_vp8(profile)  ? V4L2_PIX_FMT_VP8
                                      : is_hevc(profile) ? V4L2_PIX_FMT_HEVC
                                                         : V4L2_PIX_FMT_H264;
         unsigned codec = fmt.fmt.pix_mp.pixelformat;

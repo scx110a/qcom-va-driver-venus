@@ -88,7 +88,8 @@ template <class F> VAStatus guard(VADriverContextP ctx, F f) noexcept {
     }
 static bool supported(const Driver &d, VAProfile p) {
     return p == VAProfileH264ConstrainedBaseline || p == VAProfileH264Main ||
-           p == VAProfileH264High || is_hevc(p) || is_vp9(p) || (is_av1(p) && d.av1);
+           p == VAProfileH264High || is_hevc(p) || is_vp9(p) || is_vp8(p) ||
+           (is_av1(p) && d.av1);
 }
 static bool encode_supported(const Driver &d, VAProfile p, VAEntrypoint e) {
     return !d.encoder_device.empty() && e == VAEntrypointEncSlice &&
@@ -270,7 +271,8 @@ API(query_profiles, (VADriverContextP ctx, VAProfile *out, int *count), (void)d;
     check(out && count, "null profiles", VA_STATUS_ERROR_INVALID_PARAMETER);
     out[0] = VAProfileH264ConstrainedBaseline; out[1] = VAProfileH264Main;
     out[2] = VAProfileH264High; out[3] = VAProfileHEVCMain; out[4] = VAProfileHEVCMain10;
-    out[5] = VAProfileVP9Profile0; out[6] = VAProfileVP9Profile2; *count = 7;
+    out[5] = VAProfileVP9Profile0; out[6] = VAProfileVP9Profile2;
+    out[7] = VAProfileVP8Version0_3; *count = 8;
     if (d.av1) out[(*count)++] = VAProfileAV1Profile0;
     if (vpp_supported(VAProfileNone, VAEntrypointVideoProc)) out[(*count)++] = VAProfileNone;
     return VA_STATUS_SUCCESS;)
@@ -643,7 +645,8 @@ API(create_buffer,
                  type == VAEncPictureParameterBufferType || type == VAEncSliceParameterBufferType ||
                  type == VAEncMiscParameterBufferType || type == VAEncCodedBufferType)
               : (type == VAPictureParameterBufferType || type == VAIQMatrixBufferType ||
-                 type == VASliceParameterBufferType || type == VASliceDataBufferType),
+                 type == VASliceParameterBufferType || type == VASliceDataBufferType ||
+                 type == VAProbabilityBufferType),
           "unsupported buffer type", VA_STATUS_ERROR_UNSUPPORTED_BUFFERTYPE);
     auto b = std::make_shared<Buffer>(); b->context_id = id; b->type = type; b->element_size = size;
     b->elements = count; b->data.resize(size_t(size) * count);
@@ -723,6 +726,7 @@ API(
     } if (!s->persistent_export) s->memory.reset();
     s->status = VA_STATUS_SUCCESS; s->decoder = c->decoder; c->target = s; c->picture = Picture{};
     c->hevc_picture = HevcPicture{}; c->vp9_picture = Vp9Picture{};
+    c->vp8_picture = Vp8Picture{};
     c->av1_picture = Av1Picture{}; return VA_STATUS_SUCCESS;)
 template <class P> static void render_buffer(P &p, const std::shared_ptr<Buffer> &b) {
     using Parameter = typename std::decay_t<decltype(p.pending_slices)>::value_type;
@@ -762,6 +766,7 @@ template <class P> static void render_buffer(P &p, const std::shared_ptr<Buffer>
             slice.params = s;
             slice.bytes.assign(b->data.begin() + off, b->data.begin() + off + n);
             if (!std::is_same_v<P, Vp9Picture> && !std::is_same_v<P, Av1Picture> &&
+                !std::is_same_v<P, Vp8Picture> &&
                 slice.bytes.size() >= 4 && !slice.bytes[0] && !slice.bytes[1]) {
                 unsigned prefix = slice.bytes[2] == 1                      ? 3
                                   : !slice.bytes[2] && slice.bytes[3] == 1 ? 4
@@ -839,6 +844,8 @@ API(
                 render_buffer(c->av1_picture, b);
             else if (is_vp9(c->profile))
                 render_buffer(c->vp9_picture, b);
+            else if (is_vp8(c->profile))
+                render_buffer(c->vp8_picture, b);
             else if (is_hevc(c->profile))
                 render_buffer(c->hevc_picture, b);
             else
@@ -915,6 +922,9 @@ API(
             c->av1 = std::move(next_state);
         } else if (is_vp9(c->profile)) {
             auto bytes = vp9_bitstream(c->profile, c->vp9_picture);
+            c->decoder->submit(bytes, target);
+        } else if (is_vp8(c->profile)) {
+            auto bytes = vp8_bitstream(c->vp8_picture);
             c->decoder->submit(bytes, target);
         } else if (is_hevc(c->profile)) {
             auto next_state = c->hevc;

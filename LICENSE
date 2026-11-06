@@ -1,6 +1,7 @@
 MIT License
 
 Copyright (c) 2026 Cait Starlight
+Copyright (c) 2026 libva-v4l2 contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +20,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+The patches/ directory modifies Linux kernel files and follows their original
+GPL-2.0-only licensing instead of this MIT license. Third-party test corpora
+and frameworks are not included and retain their respective licenses.

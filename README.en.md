@@ -10,8 +10,7 @@ memory-to-memory interface, providing hardware video decoding and encoding.
 Derived from [radxa-pkg/qcom-va-driver](https://github.com/radxa-pkg/qcom-va-driver)
 1.1.1. Upstream targets Qualcomm Iris (SC8280XP); this build adapts it to the
 Venus block found on SM8250 with six changes (driver-name matching, capture
-pool size, control compatibility, and others). Full source is available in
-`qcom-va-driver-1.1.1-venus-src.tar.gz`.
+pool size, control compatibility, and others), plus added VP8 decoding support.
 
 ## Support
 
@@ -20,10 +19,11 @@ pool size, control compatibility, and others). Full source is available in
 | H.264 / AVC | Constrained Baseline, Main, High (8-bit) | Same profiles (8-bit) |
 | H.265 / HEVC | Main (8-bit), Main10 (10-bit) | Main (8-bit) |
 | VP9 | Profile 0, 2 (8/10-bit) | — |
+| VP8 | Version 0.3 (8-bit) | — |
 
 - Progressive 4:2:0 only
 - No VPP: no scaling, deinterlacing or colour conversion
-- No AV1, VP8 or MPEG-2
+- No AV1 or MPEG-2 (no corresponding VA-API profiles)
 
 ## Installation
 
@@ -53,8 +53,6 @@ sudo dpkg -r qcom-va-driver
 ```bash
 sudo apt install meson ninja-build libva-dev libdrm-dev \
                   libegl-dev libgles-dev libgbm-dev
-tar xf qcom-va-driver-1.1.1-venus-src.tar.gz
-cd qcom-va-driver-master
 meson setup build -Dprefix=/usr -Dcdsp_vpp=disabled -Dvulkan_vpp=disabled
 ninja -C build
 sudo ninja -C build install
@@ -92,6 +90,7 @@ It should report `VAEntrypointVLD` for H.264 / HEVC / VP9 and
 | Decode 4K HEVC | 1.29 s user time for 3 s of video (software: 7.75 s) |
 | Encode 1080p H.264 | 90 frames in 0.50 s |
 | Encode 4K HEVC | 60 frames in 0.80 s |
+| Decode 4K VP8 | 0.15 s user time for 5 s of video (software: 2.46 s) |
 | Firefox 4K HEVC playback | ~4.6% CPU in the RDD process |
 | mpv zero-copy | `--hwdec=vaapi`, `VO: [gpu] vaapi[nv12]` |
 
@@ -103,8 +102,8 @@ Copy `firefox-user.js` into the Firefox profile, or set via `about:config`:
 user_pref("media.ffmpeg.vaapi.enabled", true);
 ```
 
-After a restart, `about:support` → Media → Hardware Video Decoding should list
-H.264 / VP8 / VP9 / HEVC.
+After a restart, `about:support` → Media → Hardware Video Decoding should
+report as enabled.
 
 ## Notes
 
@@ -118,6 +117,7 @@ The `v4l2m2m` codecs shipped with ffmpeg do not work with this hardware
 - Source package: [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2)
 - License: MIT
 - Copyright: Copyright (c) 2026 libva-v4l2 contributors
+- Porting, debugging and documentation: DeepSeek AI assistant (2026-11)
 
 This derivative is released under the same MIT license; the original copyright
 notice and permission notice are retained in full.

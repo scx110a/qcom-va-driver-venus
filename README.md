@@ -10,7 +10,7 @@ VA-API 硬件编解码。
 衍生自 [radxa-pkg/qcom-va-driver](https://github.com/radxa-pkg/qcom-va-driver)
 1.1.1。原项目面向 Qualcomm Iris（SC8280XP），本版本针对 SM8250 的 Venus
 做了 6 处适配（驱动名匹配、capture pool 大小、控制项兼容性等），
-完整源码见 `qcom-va-driver-1.1.1-venus-src.tar.gz`。
+并新增了 VP8 解码支持。
 
 ## 支持
 
@@ -19,10 +19,11 @@ VA-API 硬件编解码。
 | H.264 / AVC | Constrained Baseline, Main, High (8-bit) | 同左 (8-bit) |
 | H.265 / HEVC | Main (8-bit), Main10 (10-bit) | Main (8-bit) |
 | VP9 | Profile 0, 2 (8/10-bit) | — |
+| VP8 | Version 0.3 (8-bit) | — |
 
 - 仅支持逐行扫描 4:2:0
 - 无 VPP：不支持缩放、去隔行、色彩转换
-- 不支持 AV1、VP8、MPEG-2
+- 不支持 AV1、MPEG-2（VA-API 未暴露对应 profile）
 
 ## 安装
 
@@ -52,8 +53,6 @@ sudo dpkg -r qcom-va-driver
 ```bash
 sudo apt install meson ninja-build libva-dev libdrm-dev \
                   libegl-dev libgles-dev libgbm-dev
-tar xf qcom-va-driver-1.1.1-venus-src.tar.gz
-cd qcom-va-driver-master
 meson setup build -Dprefix=/usr -Dcdsp_vpp=disabled -Dvulkan_vpp=disabled
 ninja -C build
 sudo ninja -C build install
@@ -90,6 +89,7 @@ vainfo
 | 解码 4K HEVC | 用户态 1.29 s / 3 s 素材（软解 7.75 s） |
 | 编码 1080p H.264 | 90 帧 / 0.50 s |
 | 编码 4K HEVC | 60 帧 / 0.80 s |
+| 解码 4K VP8 | 用户态 0.15 s / 5 s 素材（软解 2.46 s） |
 | Firefox 播放 4K HEVC | RDD 进程约 4.6% CPU |
 | mpv 零拷贝 | `--hwdec=vaapi`，`VO: [gpu] vaapi[nv12]` |
 
@@ -101,7 +101,7 @@ vainfo
 user_pref("media.ffmpeg.vaapi.enabled", true);
 ```
 
-重启后 `about:support` → 媒体 → 硬件视频解码，应列出 H.264 / VP8 / VP9 / HEVC。
+重启后 `about:support` → 媒体 → 硬件视频解码，应显示为启用。
 
 ## 注意
 
@@ -115,5 +115,6 @@ GStreamer 的 `v4l2h264dec` / `v4l2h265dec`。
 - 源码获取：[radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2)
 - 许可证：MIT
 - 版权：Copyright (c) 2026 libva-v4l2 contributors
+- 适配、调试与文档：DeepSeek AI 助手（2026-11）
 
 本衍生版本同样以 MIT 协议发布，原始版权声明与许可条款完整保留。
