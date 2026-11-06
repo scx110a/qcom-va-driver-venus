@@ -60,6 +60,9 @@ int hevc_level_control(unsigned idc) {
     throw Error(VA_STATUS_ERROR_INVALID_PARAMETER, "unsupported HEVC encode level");
 }
 std::array<int, 3> deblocking(const EncodePicture &p, bool hevc) {
+    // VP8 carries no slice-level filter controls; let the firmware decide.
+    if (p.slices.empty() && p.hevc_slices.empty())
+        return {1, 0, 0};
     if (hevc) {
         const auto &slice = p.hevc_slices.front();
         bool disabled = slice.slice_fields.bits.slice_deblocking_filter_disabled_flag;
@@ -172,8 +175,17 @@ void validate_hevc(const EncodeSettings &s, const EncodePicture &p, unsigned wid
               (!seq.general_tier_flag || seq.general_level_idc >= 120),
           "invalid HEVC filter or tier", VA_STATUS_ERROR_INVALID_PARAMETER);
 }
+void validate_vp8(const EncodeSettings &s, const EncodePicture &p, unsigned width,
+                  unsigned height) {
+    check(s.has_sequence && p.has_params, "VP8 encoding requires a sequence and picture",
+          VA_STATUS_ERROR_INVALID_PARAMETER);
+    check(s.vp8_sequence.frame_width == width && s.vp8_sequence.frame_height == height,
+          "VP8 sequence dimensions do not match context", VA_STATUS_ERROR_INVALID_PARAMETER);
+}
 void validate(const EncodeSettings &s, const EncodePicture &p, unsigned width, unsigned height) {
-    if (s.hevc)
+    if (s.vp8)
+        validate_vp8(s, p, width, height);
+    else if (s.hevc)
         validate_hevc(s, p, width, height);
     else
         validate_h264(s, p, width, height);
@@ -227,6 +239,13 @@ std::string find_encoder_device() {
 void render_encode_buffer(EncodeSettings &s, EncodePicture &p, const Buffer &b) {
     switch (b.type) {
     case VAEncSequenceParameterBufferType:
+        if (s.vp8) {
+            s.vp8_sequence = parameter<VAEncSequenceParameterBufferVP8>(b);
+            s.has_sequence = true;
+            if (!s.bitrate)
+                s.bitrate = s.peak_bitrate = s.vp8_sequence.bits_per_second;
+            break;
+        }
         if (s.hevc) {
             s.hevc_sequence = parameter<VAEncSequenceParameterBufferHEVC>(b);
             s.has_sequence = true;
@@ -253,7 +272,9 @@ void render_encode_buffer(EncodeSettings &s, EncodePicture &p, const Buffer &b) 
             s.bitrate = s.peak_bitrate = s.sequence.bits_per_second;
         break;
     case VAEncPictureParameterBufferType:
-        if (s.hevc)
+        if (s.vp8)
+            p.vp8_params = parameter<VAEncPictureParameterBufferVP8>(b);
+        else if (s.hevc)
             p.hevc_params = parameter<VAEncPictureParameterBufferHEVC>(b);
         else
             p.params = parameter<VAEncPictureParameterBufferH264>(b);
@@ -277,6 +298,9 @@ void render_encode_buffer(EncodeSettings &s, EncodePicture &p, const Buffer &b) 
             std::memcpy(&slice, b.data.data() + size_t(i) * b.element_size, sizeof(slice));
             p.slices.push_back(slice);
         }
+        break;
+    case VAQMatrixBufferType:
+        // VP8 quantiser matrices are firmware-managed; accept and ignore.
         break;
     case VAEncMiscParameterBufferType: {
         auto misc = parameter<VAEncMiscParameterBuffer>(b);
@@ -560,7 +584,12 @@ Encoder::Encoder(const std::string &device, unsigned width, unsigned height, VAP
                  const EncodeSettings &s, const EncodePicture &p, int render_fd) {
     // VA contexts may use macroblock-aligned dimensions (FFmpeg does this).
     // The sequence crop determines the visible dimensions sent to Iris.
-    if (!s.hevc) {
+    if (s.vp8) {
+        // A VP8 context surface is macroblock-aligned (1080 -> 1088); the
+        // sequence carries the visible size.
+        width = s.vp8_sequence.frame_width;
+        height = s.vp8_sequence.frame_height;
+    } else if (!s.hevc) {
         const auto &seq = s.sequence;
         unsigned coded_width = unsigned(seq.picture_width_in_mbs) * 16;
         unsigned coded_height = unsigned(seq.picture_height_in_mbs) * 16;
@@ -584,7 +613,8 @@ Encoder::Encoder(const std::string &device, unsigned width, unsigned height, VAP
           "unsupported visible encoder dimensions", VA_STATUS_ERROR_RESOLUTION_NOT_SUPPORTED);
     validate(s, p, width, height);
     auto impl = std::make_unique<Impl>(
-        width, height, s, s.hevc ? 1 : p.params.pic_fields.bits.entropy_coding_mode_flag);
+        width, height, s,
+        (s.hevc || s.vp8) ? 1 : p.params.pic_fields.bits.entropy_coding_mode_flag);
     auto &e = *impl;
     e.filter = deblocking(p, s.hevc);
     e.render_fd = fcntl(render_fd, F_DUPFD_CLOEXEC, 0);
@@ -600,9 +630,12 @@ Encoder::Encoder(const std::string &device, unsigned width, unsigned height, VAP
     fmt.type = CAPTURE;
     fmt.fmt.pix_mp.width = width;
     fmt.fmt.pix_mp.height = height;
-    fmt.fmt.pix_mp.pixelformat = s.hevc ? V4L2_PIX_FMT_HEVC : V4L2_PIX_FMT_H264;
+    const unsigned coded_fourcc = s.vp8   ? V4L2_PIX_FMT_VP8
+                                  : s.hevc ? V4L2_PIX_FMT_HEVC
+                                           : V4L2_PIX_FMT_H264;
+    fmt.fmt.pix_mp.pixelformat = coded_fourcc;
     checked(e.fd, VIDIOC_S_FMT, &fmt, "encoder S_FMT coded format");
-    check(fmt.fmt.pix_mp.pixelformat == (s.hevc ? V4L2_PIX_FMT_HEVC : V4L2_PIX_FMT_H264),
+    check(fmt.fmt.pix_mp.pixelformat == coded_fourcc,
           "device does not support the requested encode format", VA_STATUS_ERROR_UNSUPPORTED_PROFILE);
     fmt = {};
     fmt.type = OUTPUT;
@@ -622,7 +655,9 @@ Encoder::Encoder(const std::string &device, unsigned width, unsigned height, VAP
     crop.r.width = width;
     crop.r.height = height;
     checked(e.fd, VIDIOC_S_SELECTION, &crop, "encoder S_SELECTION");
-    if (s.hevc) {
+    if (s.vp8) {
+        // VP8 has a single profile and no level controls.
+    } else if (s.hevc) {
         e.control(V4L2_CID_MPEG_VIDEO_HEVC_PROFILE, V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN);
         e.control(V4L2_CID_MPEG_VIDEO_HEVC_LEVEL,
                   hevc_level_control(s.hevc_sequence.general_level_idc));
@@ -658,9 +693,13 @@ Encoder::Encoder(const std::string &device, unsigned width, unsigned height, VAP
         e.control(V4L2_CID_MPEG_VIDEO_BITRATE, s.bitrate);
         e.control(V4L2_CID_MPEG_VIDEO_BITRATE_PEAK, s.peak_bitrate);
     }
-    e.control(s.hevc ? V4L2_CID_MPEG_VIDEO_HEVC_MIN_QP : V4L2_CID_MPEG_VIDEO_H264_MIN_QP, s.min_qp);
-    e.control(s.hevc ? V4L2_CID_MPEG_VIDEO_HEVC_MAX_QP : V4L2_CID_MPEG_VIDEO_H264_MAX_QP, s.max_qp);
-    e.configure_deblocking();
+    if (!s.vp8) {
+        e.control(s.hevc ? V4L2_CID_MPEG_VIDEO_HEVC_MIN_QP : V4L2_CID_MPEG_VIDEO_H264_MIN_QP,
+                  s.min_qp);
+        e.control(s.hevc ? V4L2_CID_MPEG_VIDEO_HEVC_MAX_QP : V4L2_CID_MPEG_VIDEO_H264_MAX_QP,
+                  s.max_qp);
+        e.configure_deblocking();
+    }
     for (unsigned type : {CAPTURE, OUTPUT}) {
         v4l2_streamparm parm{};
         parm.type = type;
@@ -740,19 +779,24 @@ std::shared_ptr<EncodeTask> Encoder::encode(const EncodeSettings &s, const Encod
     validate(s, p, e.width, e.height);
     check(deblocking(p, s.hevc) == e.filter, "changing deblocking requires a new context",
           VA_STATUS_ERROR_UNIMPLEMENTED);
-    check((s.hevc
-               ? s.hevc_sequence.general_level_idc == e.settings.hevc_sequence.general_level_idc &&
-                     s.hevc_sequence.general_tier_flag == e.settings.hevc_sequence.general_tier_flag
-               : s.sequence.level_idc == e.settings.sequence.level_idc &&
-                     p.params.pic_fields.bits.entropy_coding_mode_flag == e.entropy) &&
+    const bool same_codec_settings =
+        s.vp8 ? s.vp8_sequence.bits_per_second == e.settings.vp8_sequence.bits_per_second
+        : s.hevc
+            ? s.hevc_sequence.general_level_idc == e.settings.hevc_sequence.general_level_idc &&
+                  s.hevc_sequence.general_tier_flag == e.settings.hevc_sequence.general_tier_flag
+            : s.sequence.level_idc == e.settings.sequence.level_idc &&
+                  p.params.pic_fields.bits.entropy_coding_mode_flag == e.entropy;
+    check(same_codec_settings &&
               s.fps_num == e.settings.fps_num && s.fps_den == e.settings.fps_den &&
               s.bitrate == e.settings.bitrate && s.peak_bitrate == e.settings.peak_bitrate &&
               s.min_qp == e.settings.min_qp && s.max_qp == e.settings.max_qp,
           "changing encoder settings requires a new context", VA_STATUS_ERROR_UNIMPLEMENTED);
-    const bool idr =
-        s.hevc ? p.hevc_params.pic_fields.bits.idr_pic_flag : p.params.pic_fields.bits.idr_pic_flag;
-    const bool intra =
-        s.hevc ? p.hevc_slices.front().slice_type == 2 : p.slices.front().slice_type % 5 == 2;
+    const bool idr = s.hevc   ? p.hevc_params.pic_fields.bits.idr_pic_flag
+                     : s.vp8 ? p.vp8_params.ref_flags.bits.force_kf
+                             : p.params.pic_fields.bits.idr_pic_flag;
+    const bool intra = s.hevc   ? p.hevc_slices.front().slice_type == 2
+                       : s.vp8 ? p.vp8_params.ref_flags.bits.force_kf
+                               : p.slices.front().slice_type % 5 == 2;
     check(e.token || idr, "encoder must start with IDR", VA_STATUS_ERROR_INVALID_PARAMETER);
     // Clients with multiple GOPs per IDR (including Sunshine) submit non-IDR
     // I pictures / HEVC CRA. Iris only exposes FORCE_KEY_FRAME, which emits IDR.
@@ -763,7 +807,10 @@ std::shared_ptr<EncodeTask> Encoder::encode(const EncodeSettings &s, const Encod
     if (!intra) {
         VASurfaceID reference;
         bool valid;
-        if (s.hevc) {
+        if (s.vp8) {
+            reference = p.vp8_params.ref_last_frame;
+            valid = reference != VA_INVALID_SURFACE;
+        } else if (s.hevc) {
             const auto &ref = p.hevc_slices.front().ref_pic_list0[0];
             reference = ref.picture_id;
             valid = !(ref.flags & (VA_PICTURE_HEVC_INVALID | VA_PICTURE_HEVC_LONG_TERM_REFERENCE));
@@ -776,16 +823,17 @@ std::shared_ptr<EncodeTask> Encoder::encode(const EncodeSettings &s, const Encod
               "encoder only supports the immediately preceding reference",
               VA_STATUS_ERROR_UNIMPLEMENTED);
     }
-    check(s.hevc ? p.hevc_params.pic_fields.bits.reference_pic_flag
-                 : p.params.pic_fields.bits.reference_pic_flag,
+    check(s.vp8 || (s.hevc ? p.hevc_params.pic_fields.bits.reference_pic_flag
+                           : p.params.pic_fields.bits.reference_pic_flag),
           "non-reference encoding unsupported", VA_STATUS_ERROR_UNIMPLEMENTED);
     auto memory = input->memory;
     check(memory && memory->fourcc == VA_FOURCC_NV12 && memory->width >= e.width &&
               memory->height >= e.height,
           "invalid encoder input surface", VA_STATUS_ERROR_INVALID_SURFACE);
     check(!output.coded_mapped, "coded buffer is mapped", VA_STATUS_ERROR_SURFACE_BUSY);
-    int qp = s.hevc ? int(p.hevc_params.pic_init_qp) + p.hevc_slices.front().slice_qp_delta
-                    : int(p.params.pic_init_qp) + p.slices.front().slice_qp_delta;
+    int qp = s.vp8   ? 26
+             : s.hevc ? int(p.hevc_params.pic_init_qp) + p.hevc_slices.front().slice_qp_delta
+                      : int(p.params.pic_init_qp) + p.slices.front().slice_qp_delta;
     check(qp >= 1 && qp <= 51, "invalid encode picture QP", VA_STATUS_ERROR_INVALID_PARAMETER);
     e.refresh();
     check(!output.encode_task || !output.encode_task->pending, "coded buffer is pending",
@@ -855,7 +903,7 @@ std::shared_ptr<EncodeTask> Encoder::encode(const EncodeSettings &s, const Encod
               : e.import ? "staging"
                          : "cpu-mmap",
               unsigned(memory->origin));
-        if (s.rate_control == VA_RC_CQP && qp != e.current_qp) {
+        if (!s.vp8 && s.rate_control == VA_RC_CQP && qp != e.current_qp) {
             e.control(s.hevc ? V4L2_CID_MPEG_VIDEO_HEVC_I_FRAME_QP
                              : V4L2_CID_MPEG_VIDEO_H264_I_FRAME_QP,
                       qp);
@@ -885,7 +933,7 @@ std::shared_ptr<EncodeTask> Encoder::encode(const EncodeSettings &s, const Encod
         output.coded = {};
         checked(e.fd, VIDIOC_QBUF, &q.buffer, "encoder QBUF OUTPUT");
         e.token = token;
-        e.last_reference = p.reconstruction(s.hevc);
+        e.last_reference = p.reconstruction(s.hevc, s.vp8);
         trace("encoder queued token=%llu depth=%zu", (unsigned long long)token, e.jobs.size());
         return job->task;
     } catch (const Error &error) {

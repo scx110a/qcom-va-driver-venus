@@ -1,3 +1,11 @@
+qcom-va-driver (1.1.2-1) unstable; urgency=medium
+
+  * Add VP8 decoding and encoding support on Venus.
+  * Report the actual platform (Venus or Iris) in the VA-API vendor string
+    instead of always saying Iris.
+
+ -- Cait Starlight <scx110@gmail.com>  Fri, 06 Nov 2026 19:10:00 +0800
+
 qcom-va-driver (1.1.1-1) unstable; urgency=medium
 
   * Provide and conflict with libva-v4l2 to support full package replacement

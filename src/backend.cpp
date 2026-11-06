@@ -94,7 +94,7 @@ static bool supported(const Driver &d, VAProfile p) {
 static bool encode_supported(const Driver &d, VAProfile p, VAEntrypoint e) {
     return !d.encoder_device.empty() && e == VAEntrypointEncSlice &&
            (p == VAProfileH264ConstrainedBaseline || p == VAProfileH264Main ||
-            p == VAProfileH264High || p == VAProfileHEVCMain);
+            p == VAProfileH264High || p == VAProfileHEVCMain || is_vp8(p));
 }
 static unsigned encode_attribute(VAConfigAttribType type, VAProfile profile) {
     (void)profile; // HEVC attributes are only available in libva >= 1.13.
@@ -610,7 +610,8 @@ API(
           "invalid context dimensions", VA_STATUS_ERROR_RESOLUTION_NOT_SUPPORTED);
     auto c = std::make_shared<Context>(); c->profile = config.profile;
     c->entrypoint = config.entrypoint; c->encode_settings.rate_control = config.rate_control;
-    c->encode_settings.hevc = is_hevc(c->profile); if (c->entrypoint == VAEntrypointEncSlice)
+    c->encode_settings.hevc = is_hevc(c->profile);
+    c->encode_settings.vp8 = is_vp8(c->profile); if (c->entrypoint == VAEntrypointEncSlice)
         check(w <= 3840 && h <= 2160 && !(w & 1) && !(h & 1), "unsupported encoder dimensions",
               VA_STATUS_ERROR_RESOLUTION_NOT_SUPPORTED);
     for (int i = 0; i < count; ++i) surface(d, targets[i]); c->width = w; c->height = h;
@@ -643,7 +644,8 @@ API(create_buffer,
           : encoding
               ? (type == VAEncSequenceParameterBufferType ||
                  type == VAEncPictureParameterBufferType || type == VAEncSliceParameterBufferType ||
-                 type == VAEncMiscParameterBufferType || type == VAEncCodedBufferType)
+                 type == VAEncMiscParameterBufferType || type == VAEncCodedBufferType ||
+                 type == VAQMatrixBufferType)
               : (type == VAPictureParameterBufferType || type == VAIQMatrixBufferType ||
                  type == VASliceParameterBufferType || type == VASliceDataBufferType ||
                  type == VAProbabilityBufferType),
@@ -886,10 +888,12 @@ API(
     } if (c->entrypoint == VAEntrypointEncSlice) {
         check(c->encode_picture.has_params, "missing encode picture",
               VA_STATUS_ERROR_INVALID_PARAMETER);
-        auto coded = buffer(d, c->encode_picture.coded_buffer(c->encode_settings.hevc));
+        auto coded = buffer(d, c->encode_picture.coded_buffer(c->encode_settings.hevc,
+                                                             c->encode_settings.vp8));
         check(coded->type == VAEncCodedBufferType && coded->context_id == id,
               "invalid encode output buffer", VA_STATUS_ERROR_INVALID_BUFFER);
-        auto reconstruction = surface(d, c->encode_picture.reconstruction(c->encode_settings.hevc));
+        auto reconstruction = surface(
+            d, c->encode_picture.reconstruction(c->encode_settings.hevc, c->encode_settings.vp8));
         synchronize_encode(reconstruction->encode_task);
         if (!c->encoder) {
             check(ctx->drm_state, "encoding requires a DRM display");

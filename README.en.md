@@ -10,7 +10,7 @@ memory-to-memory interface, providing hardware video decoding and encoding.
 Derived from [radxa-pkg/qcom-va-driver](https://github.com/radxa-pkg/qcom-va-driver)
 1.1.1. Upstream targets Qualcomm Iris (SC8280XP); this build adapts it to the
 Venus block found on SM8250 with six changes (driver-name matching, capture
-pool size, control compatibility, and others), plus added VP8 decoding support.
+pool size, control compatibility, and others), plus added VP8 decoding and encoding support.
 
 ## Support
 
@@ -19,7 +19,7 @@ pool size, control compatibility, and others), plus added VP8 decoding support.
 | H.264 / AVC | Constrained Baseline, Main, High (8-bit) | Same profiles (8-bit) |
 | H.265 / HEVC | Main (8-bit), Main10 (10-bit) | Main (8-bit) |
 | VP9 | Profile 0, 2 (8/10-bit) | — |
-| VP8 | Version 0.3 (8-bit) | — |
+| VP8 | Version 0.3 (8-bit) | Version 0.3 (8-bit) |
 
 - Progressive 4:2:0 only
 - No VPP: no scaling, deinterlacing or colour conversion
@@ -90,6 +90,7 @@ It should report `VAEntrypointVLD` for H.264 / HEVC / VP9 and
 | Encode 1080p H.264 | 90 frames in 0.50 s |
 | Encode 4K HEVC | 60 frames in 0.80 s |
 | Decode 4K VP8 | 0.15 s user time for 5 s of video (software: 2.46 s) |
+| Encode 4K VP8 | 60 frames in 1.63 s |
 | Firefox 4K HEVC playback | ~4.6% CPU in the RDD process |
 | mpv zero-copy | `--hwdec=vaapi`, `VO: [gpu] vaapi[nv12]` |
 

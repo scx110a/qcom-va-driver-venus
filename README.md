@@ -10,7 +10,7 @@ VA-API 硬件编解码。
 衍生自 [radxa-pkg/qcom-va-driver](https://github.com/radxa-pkg/qcom-va-driver)
 1.1.1。原项目面向 Qualcomm Iris（SC8280XP），本版本针对 SM8250 的 Venus
 做了 6 处适配（驱动名匹配、capture pool 大小、控制项兼容性等），
-并新增了 VP8 解码支持。
+并新增了 VP8 解码与编码支持。
 
 ## 支持
 
@@ -19,7 +19,7 @@ VA-API 硬件编解码。
 | H.264 / AVC | Constrained Baseline, Main, High (8-bit) | 同左 (8-bit) |
 | H.265 / HEVC | Main (8-bit), Main10 (10-bit) | Main (8-bit) |
 | VP9 | Profile 0, 2 (8/10-bit) | — |
-| VP8 | Version 0.3 (8-bit) | — |
+| VP8 | Version 0.3 (8-bit) | Version 0.3 (8-bit) |
 
 - 仅支持逐行扫描 4:2:0
 - 无 VPP：不支持缩放、去隔行、色彩转换
@@ -90,6 +90,7 @@ vainfo
 | 编码 1080p H.264 | 90 帧 / 0.50 s |
 | 编码 4K HEVC | 60 帧 / 0.80 s |
 | 解码 4K VP8 | 用户态 0.15 s / 5 s 素材（软解 2.46 s） |
+| 编码 4K VP8 | 60 帧 / 1.63 s |
 | Firefox 播放 4K HEVC | RDD 进程约 4.6% CPU |
 | mpv 零拷贝 | `--hwdec=vaapi`，`VO: [gpu] vaapi[nv12]` |
 

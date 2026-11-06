@@ -9,6 +9,7 @@
 #include <va/va_dec_av1.h>
 #include <va/va_enc_h264.h>
 #include <va/va_enc_hevc.h>
+#include <va/va_enc_vp8.h>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -253,20 +254,25 @@ std::string find_encoder_device();
 struct EncodePicture {
     VAEncPictureParameterBufferH264 params{};
     VAEncPictureParameterBufferHEVC hevc_params{};
+    VAEncPictureParameterBufferVP8 vp8_params{};
     bool has_params = false;
     std::vector<VAEncSliceParameterBufferH264> slices;
     std::vector<VAEncSliceParameterBufferHEVC> hevc_slices;
-    VABufferID coded_buffer(bool hevc) const {
-        return hevc ? hevc_params.coded_buf : params.coded_buf;
+    VABufferID coded_buffer(bool hevc, bool vp8) const {
+        return hevc ? hevc_params.coded_buf : vp8 ? vp8_params.coded_buf : params.coded_buf;
     }
-    VASurfaceID reconstruction(bool hevc) const {
-        return hevc ? hevc_params.decoded_curr_pic.picture_id : params.CurrPic.picture_id;
+    VASurfaceID reconstruction(bool hevc, bool vp8) const {
+        return hevc ? hevc_params.decoded_curr_pic.picture_id
+                    : vp8 ? vp8_params.reconstructed_frame
+                          : params.CurrPic.picture_id;
     }
 };
 struct EncodeSettings {
     VAEncSequenceParameterBufferH264 sequence{};
     VAEncSequenceParameterBufferHEVC hevc_sequence{};
+    VAEncSequenceParameterBufferVP8 vp8_sequence{};
     bool hevc = false;
+    bool vp8 = false;
     bool has_sequence = false;
     unsigned rate_control = VA_RC_CQP;
     unsigned bitrate = 0, peak_bitrate = 0, min_qp = 1, max_qp = 51;
