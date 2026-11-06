@@ -60,7 +60,7 @@ uint8_t *Memory::map() {
     }
     return static_cast<uint8_t *>(mapping);
 }
-std::string find_device(bool &av1) {
+std::string find_device(bool &av1, std::string *platform) {
     std::vector<std::string> paths;
     if (const char *p = std::getenv("IRIS_VAAPI_DEVICE"))
         paths.push_back(p);
@@ -77,10 +77,12 @@ std::string find_device(bool &av1) {
             continue;
         v4l2_capability cap{};
         bool match = false, has_av1 = false;
+        std::string driver;
         if (!call(fd, VIDIOC_QUERYCAP, &cap) &&
             (!strcmp(reinterpret_cast<char *>(cap.driver), "iris_driver") || !strcmp(reinterpret_cast<char *>(cap.driver), "qcom-venus"))) {
             unsigned caps =
                 cap.capabilities & V4L2_CAP_DEVICE_CAPS ? cap.device_caps : cap.capabilities;
+            driver = reinterpret_cast<char *>(cap.driver);
             if (caps & V4L2_CAP_VIDEO_M2M_MPLANE) {
                 v4l2_fmtdesc fmt{};
                 fmt.type = OUTPUT;
@@ -96,10 +98,12 @@ std::string find_device(bool &av1) {
         close(fd);
         if (match) {
             av1 = has_av1;
+            if (platform)
+                *platform = driver;
             return path;
         }
     }
-    throw Error(VA_STATUS_ERROR_OPERATION_FAILED, "no Iris stateful H264 decoder found");
+    throw Error(VA_STATUS_ERROR_OPERATION_FAILED, "no stateful H264 decoder found");
 }
 Decoder::Decoder(const std::string &device, unsigned width, unsigned height, unsigned surfaces,
                  VAProfile profile, unsigned rt_format, int render_fd)
@@ -108,7 +112,7 @@ Decoder::Decoder(const std::string &device, unsigned width, unsigned height, uns
       fourcc_(rt_format == VA_RT_FORMAT_YUV420_10 ? VA_FOURCC_P010 : VA_FOURCC_NV12),
       copier_(render_fd) {
     fd_ = open(device.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
-    check(fd_ >= 0, "open Iris decoder");
+    check(fd_ >= 0, "open decoder");
     try {
         v4l2_event_subscription sub{};
         sub.type = V4L2_EVENT_SOURCE_CHANGE;
@@ -125,12 +129,12 @@ Decoder::Decoder(const std::string &device, unsigned width, unsigned height, uns
         unsigned codec = fmt.fmt.pix_mp.pixelformat;
         fmt.fmt.pix_mp.num_planes = 1;
         checked(fd_, VIDIOC_S_FMT, &fmt, "S_FMT OUTPUT");
-        check(fmt.fmt.pix_mp.pixelformat == codec, "Iris does not support the requested codec");
+        check(fmt.fmt.pix_mp.pixelformat == codec, "device does not support the requested codec");
         v4l2_control delay{};
         delay.id = V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY;
         delay.value = 0;
         checked(fd_, VIDIOC_S_CTRL, &delay,
-                "S_CTRL DISPLAY_DELAY (Iris decode-order patch required)");
+                "S_CTRL DISPLAY_DELAY");
         delay.id = V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY_ENABLE;
         delay.value = 1;
         checked(fd_, VIDIOC_S_CTRL, &delay, "S_CTRL DISPLAY_DELAY_ENABLE");
@@ -227,7 +231,7 @@ void Decoder::configure_capture() {
           preferred_pool_size_, count, minimum.value, fmt.fmt.pix_mp.plane_fmt[0].sizeimage);
     allocate(CAPTURE, count, capture_);
     check(capture_.size() >= count,
-          "CAPTURE pool too small; apply the Iris gen2 capture-pool kernel patch",
+          "CAPTURE pool too small: fewer buffers than requested",
           VA_STATUS_ERROR_ALLOCATION_FAILED);
     for (auto &m : capture_) {
         m->stride = fmt.fmt.pix_mp.plane_fmt[0].bytesperline;
@@ -293,7 +297,7 @@ void Decoder::pump(int timeout_ms) {
         do {
             ret = poll(&p, 1, timeout_ms);
         } while (ret < 0 && errno == EINTR);
-        check(ret >= 0 && !(p.revents & POLLNVAL), "poll Iris failed");
+        check(ret >= 0 && !(p.revents & POLLNVAL), "poll decoder failed");
     }
     for (;;) {
         v4l2_event event{};

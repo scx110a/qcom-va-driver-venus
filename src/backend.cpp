@@ -1212,7 +1212,8 @@ extern "C" VAStatus __vaDriverInit_1_0(VADriverContextP ctx) {
     using namespace irisva;
     try {
         auto d = std::make_unique<Driver>();
-        d->device = find_device(d->av1);
+        std::string platform;
+        d->device = find_device(d->av1, &platform);
         d->encoder_device = find_encoder_device();
         ctx->version_major = VA_MAJOR_VERSION;
         ctx->version_minor = VA_MINOR_VERSION;
@@ -1223,7 +1224,9 @@ extern "C" VAStatus __vaDriverInit_1_0(VADriverContextP ctx) {
         ctx->max_image_formats = 5;
         ctx->max_subpic_formats = 1;
         ctx->max_display_attributes = 1;
-        ctx->str_vendor = "Iris V4L2 stateful VA-API backend";
+        ctx->str_vendor = platform == "qcom-venus"
+                              ? "Qualcomm Venus V4L2 stateful VA-API backend"
+                              : "Qualcomm Iris V4L2 stateful VA-API backend";
         auto &v = *ctx->vtable;
         if (ctx->vtable_vpp && vpp_supported(VAProfileNone, VAEntrypointVideoProc)) {
             auto &vpp = *ctx->vtable_vpp;

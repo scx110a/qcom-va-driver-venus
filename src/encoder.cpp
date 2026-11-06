@@ -397,7 +397,7 @@ struct Encoder::Impl {
             // Older Iris kernels only expose firmware's enabled, 0/0 default.
             // Never silently replace a non-default request with that default.
             check((filter[0] == 0 || (settings.hevc && filter[0] == 2)) && !filter[1] && !filter[2],
-                  "deblocking request requires Iris loop-filter controls",
+                  "deblocking request requires loop-filter controls",
                   VA_STATUS_ERROR_UNIMPLEMENTED);
             return;
         }
@@ -595,7 +595,7 @@ Encoder::Encoder(const std::string &device, unsigned width, unsigned height, VAP
     close(probe);
     e.import = coherent;
     e.fd = open(device.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
-    check(e.fd >= 0, "open Iris encoder");
+    check(e.fd >= 0, "open encoder");
     v4l2_format fmt{};
     fmt.type = CAPTURE;
     fmt.fmt.pix_mp.width = width;
@@ -603,7 +603,7 @@ Encoder::Encoder(const std::string &device, unsigned width, unsigned height, VAP
     fmt.fmt.pix_mp.pixelformat = s.hevc ? V4L2_PIX_FMT_HEVC : V4L2_PIX_FMT_H264;
     checked(e.fd, VIDIOC_S_FMT, &fmt, "encoder S_FMT coded format");
     check(fmt.fmt.pix_mp.pixelformat == (s.hevc ? V4L2_PIX_FMT_HEVC : V4L2_PIX_FMT_H264),
-          "Iris does not support the requested encode format", VA_STATUS_ERROR_UNSUPPORTED_PROFILE);
+          "device does not support the requested encode format", VA_STATUS_ERROR_UNSUPPORTED_PROFILE);
     fmt = {};
     fmt.type = OUTPUT;
     fmt.fmt.pix_mp.width = width;
@@ -612,7 +612,7 @@ Encoder::Encoder(const std::string &device, unsigned width, unsigned height, VAP
     fmt.fmt.pix_mp.field = V4L2_FIELD_NONE;
     checked(e.fd, VIDIOC_S_FMT, &fmt, "encoder S_FMT NV12");
     check(fmt.fmt.pix_mp.pixelformat == V4L2_PIX_FMT_NV12 && fmt.fmt.pix_mp.num_planes == 1,
-          "unsupported Iris encoder input layout");
+          "unsupported encoder input layout");
     e.stride = fmt.fmt.pix_mp.plane_fmt[0].bytesperline;
     e.storage_height = fmt.fmt.pix_mp.height;
     e.input_size = fmt.fmt.pix_mp.plane_fmt[0].sizeimage;
@@ -634,7 +634,7 @@ Encoder::Encoder(const std::string &device, unsigned width, unsigned height, VAP
         if (ret == 0 && !(tier.flags & V4L2_CTRL_FLAG_DISABLED))
             e.control(tier.id, s.hevc_sequence.general_tier_flag);
         else
-            check(!s.hevc_sequence.general_tier_flag, "HEVC High tier requires Iris tier control",
+            check(!s.hevc_sequence.general_tier_flag, "HEVC High tier requires tier control",
                   VA_STATUS_ERROR_UNIMPLEMENTED);
     } else {
         e.control(V4L2_CID_MPEG_VIDEO_H264_PROFILE,

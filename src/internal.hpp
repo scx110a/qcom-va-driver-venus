@@ -248,7 +248,7 @@ class Decoder {
     void finish();
     void refresh();
 };
-std::string find_device(bool &av1);
+std::string find_device(bool &av1, std::string *platform = nullptr);
 std::string find_encoder_device();
 struct EncodePicture {
     VAEncPictureParameterBufferH264 params{};
